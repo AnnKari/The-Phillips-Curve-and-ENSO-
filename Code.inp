@@ -1,0 +1,149 @@
+
+
+#Codes
+
+#Package
+include LocalProjection.gfn
+
+#Import data
+clear
+set verbose off 
+open \
+  "C:\Users\Anna Karina\Downloads\base de datos.xlsx"
+setobs 12 1960:01 --time-series
+smpl 1999:01 2021:06
+
+#Seasonal adjustment 
+
+#pagr_sa= deseas(pagr,t)#no necesita ajuste
+#cetes91sa = deseas(cetes91,t) #no necesita ajuste
+#igaesa= deseas(igae,t)# no necesita ajuste
+expcrinfsa=deseas(expcrinf,t)# sí necesita ajuste
+#crexpigaesa=deseas(crexpigae,t)# no necesita ajuste
+#VIXsa=deseas(VIX,t)#no necesita ajuste
+crcambiosa=deseas(crcambio,t)# sí necesita ajuste
+infagrisa=deseas(infagri,t)# sí necesita ajuste
+#tempsa=deseas(temp,t)# sí necesita ajuste
+#precisa=deseas(preci,t)# sí necesita ajuste
+costmanosa=deseas(costmano,t)#sí necesita
+INPCagrisa=deseas(INPCagri,t)#sí necesita
+
+#Sationary adjustment
+
+include PPtest.gfn
+GUI_PP(VIX, 1, 0, 1)#Z_t = -4.98583 (p-value = 0.0000), No hay raíz unitaria
+GUI_PP(cetes91, 0, 0, 1)#Z_t = -5.32721 (p-value = 0.0000) No hay raíz unitaria 
+GUI_PP(crexpigae, 1, 0, 1) #Z_t = -14.8696 (p-value = 0.0000) No hay raíz unitaria
+GUI_PP(expcrinfsa, 1, 0, 1) #Z_t = -9.25915 (p-value = 0.0000) No hay raíz
+GUI_PP(infagrisa, 1, 0, 1) #Z_t = -13.5768 (p-value = 0.0000)No hay raíz
+GUI_PP(crcambiosa, 0, 0, 1) #Z_t = -12.5144 (p-value = 0.0000)No hay raíz unitaria
+GUI_PP(temp, 1, 0, 1)#Z_t = -6.94914 (p-value = 0.0000) No hay raíz unitaria
+GUI_PP(preci, 1, 0, 1) #Z_t = -7.32664 (p-value = 0.0000)No hay raíz unitaria
+GUI_PP(pagr, 0, 0, 1) #Z_t = 0.575967 (p-value = 0.8402) Sí hay raíz unitaria
+GUI_PP(costmanosa, 1, 0, 1)#Z_t = -4.16131 (p-value = 0.0010)No hay
+GUI_PP(igae, 0, 0, 1)#Z_t = 1.2433 (p-value = 0.9456) Sí hay
+GUI_PP(INPCagrisa, 0, 0, 1)#Z_t = 5.33319 (p-value = 1.0000) Sí hay
+
+diff pagr #indagri first differences
+
+#HP filter to IGAE serie
+series hp_igae = hpfilt(igae, 14400, 0)
+setinfo hp_igae \
+  --description="PIB filtrado: ciclo de Hodrick-Prescott (lambda = 14400)"
+  
+#Local Projections 
+
+##Variables
+list endogenous = infagrisa hp_igae expcrinfsa crexpigae cetes91 crcambiosa# Endogenous variables list
+list exogenous =  VIX d_pagr
+
+##Lag selection for Local Projection---------------------------------------------------------------------------------------------------------
+##Parameters needed for lag selection 
+scalar constant = 1 					# Boolean: 1.- Constant; 0.- No constant.
+scalar infocr = 2 						# Integer: 1. AIC, 2. BIC, 3. HQC. Required if lagselection = 1 or exog_lagselection = 1
+scalar lagselection = 1 				# Boolean: Lag selection of endogenous variables. (1.- Yes, 0.- No).
+scalar nlags = 0 						# Integer: Number of lags of endogenous variables. Required if lagselection = 0.
+scalar maxlags = 12						# Integer: Maximum lags of endogenous variables in lag selection. Required if lagselection = 1.
+
+scalar exog_lagselection = 1 			# Boolean: Lag selection of exogenous variables. (1.- Yes, 0.- No).
+scalar exog_nlags = 0 					# Integer: Number of lags of exogenous variables. Required if exog_lagselection = 0. 
+scalar exog_maxlags = 12 				# Integer: Maximum lags of exogenous variables in lag selection. Required if exog_lagselection = 1.
+                                                  #When exog_ maxlags = 0 when exog_lagselection = 1, activate contemp.
+scalar contemp = 0						# Boolean: Contemporaneous effect of exogenous variables (1.- Yes, 0.- No). 
+
+lagselecting = lag_select(endogenous, exogenous, constant, infocr, 
+  lagselection, nlags, maxlags, exog_lagselection, exog_nlags, exog_maxlags, contemp)
+eval lagselecting.OptimalLags
+scalar nlags = lagselecting.OptimalLags[1] 		 # Integer: Lag selection of endogenous variables
+scalar exog_nlags = lagselecting.OptimalLags[2]  # Integer: Lag selection of exogenous variables
+
+##VARIABLE TRIGGER: TEMPERATURA
+##Regime-Switching Local Projection-----------------------------------------------------------------------------------------------------------
+##See Auerbach and Gorodnichenko (2012)
+##Parameters needed for the regime switching local projection
+
+scalar length = 12 						# Integer: Periods ahead in the local projection IRF.
+scalar constant = 1 					# Boolean: Include constant? (1.- Yes, 0.- No).
+scalar nlags = 4 		 				# Integer: Number of lags for the endogenous variables. 
+scalar exog_nlags = 1  					# Integer: Number of lags for the exogenous variables. Not required if exogenous is null.
+scalar contemp = 0						# Boolean: Contemporaneous effect of exogenous variables (1.- Yes, 0.- No). 
+scalar ConfInterv = 0.95				# Scalar: Confidence interval in the IRF. Default = 0.95. 
+scalar shocksize = 0 					# Boolean: Shock size (0.- One standard deviation shock, 1.- One unit shock).
+scalar PositionShock = 2				# Integer: Position of the shock variable (number of variable) in the list of endogenous variables. 
+scalar PositionResponse = 1				# Integer: Position of the response variable (number of variable) in the list of endogenous variables. 
+
+list trigger = temp 						# List: Switching/trigger variable for the high/low regime. Only one variable allowed. 
+scalar logisticfun = 1			        # Boolean: Plug the switching variable into the transition function? (1. Yes, 0. No)
+scalar lagswitching = 1					# Boolean: Lagged switching variable (t − 1) (1. Yes, 0. No).
+scalar dummy = 0 						# Boolean: Switching variable is a dummy (1-0)?. (1. Yes, 0. No).
+scalar thresh = 0.5				 		# Scalar: Threshold (as a percentile) of the switching variable. For additional details, read the documentation. 
+# o	If the user previously created an indicator variable and dummy = 1, this input can be disregarded. 				
+# o	If dummy = 1 and the trigger variable is not a dummy, thresh creates a dummy variable that takes value of 1 
+# if the trigger variable exceeds the indicated percentile value and 0 otherwise. Valid values between 0 and 1. 
+
+scalar hpfilter = 1 					# Boolean: Switching/trigger variable decomposed with the HP filter. (1. Yes, 0. No).
+scalar lambda = 129600 					# Scalar: Lambda parameter for HP-Filter. 
+                                        #         Ravn and Uhlig (2002): Anuual data = 6.25, Quarterly data = 1600, Monthly data = 14,400 or 129,600
+scalar gamma = 3						# Scalar: Gamma parameter of the logistic transition function.
+
+nonlinearmodel = rs_local_projection(endogenous, exogenous, length, constant, nlags, exog_nlags, contemp, 
+  ConfInterv, shocksize, PositionShock, PositionResponse,
+  trigger, logisticfun, lagswitching, dummy, thresh, hpfilter, lambda, gamma)
+eval nonlinearmodel.R1_IRF
+eval nonlinearmodel.R2_IRF
+
+\
+
+#VARIABLE TRIGGER:PRECIPITACIÓN
+scalar length = 12 						# Integer: Periods ahead in the local projection IRF.
+scalar constant = 1 					# Boolean: Include constant? (1.- Yes, 0.- No).
+scalar nlags = 4 		 				# Integer: Number of lags for the endogenous variables. 
+scalar exog_nlags = 1  					# Integer: Number of lags for the exogenous variables. Not required if exogenous is null.
+scalar contemp = 0						# Boolean: Contemporaneous effect of exogenous variables (1.- Yes, 0.- No). 
+scalar ConfInterv = 0.95				# Scalar: Confidence interval in the IRF. Default = 0.95. 
+scalar shocksize = 0 					# Boolean: Shock size (0.- One standard deviation shock, 1.- One unit shock).
+scalar PositionShock = 2				# Integer: Position of the shock variable (number of variable) in the list of endogenous variables. 
+scalar PositionResponse = 1				# Integer: Position of the response variable (number of variable) in the list of endogenous variables. 
+
+list trigger = preci 						# List: Switching/trigger variable for the high/low regime. Only one variable allowed. 
+scalar logisticfun = 1			        # Boolean: Plug the switching variable into the transition function? (1. Yes, 0. No)
+scalar lagswitching = 1					# Boolean: Lagged switching variable (t − 1) (1. Yes, 0. No).
+scalar dummy = 0 						# Boolean: Switching variable is a dummy (1-0)?. (1. Yes, 0. No).
+scalar thresh = 0.5				 		# Scalar: Threshold (as a percentile) of the switching variable. For additional details, read the documentation. 
+# o	If the user previously created an indicator variable and dummy = 1, this input can be disregarded. 				
+# o	If dummy = 1 and the trigger variable is not a dummy, thresh creates a dummy variable that takes value of 1 
+# if the trigger variable exceeds the indicated percentile value and 0 otherwise. Valid values between 0 and 1. 
+
+scalar hpfilter = 1 					# Boolean: Switching/trigger variable decomposed with the HP filter. (1. Yes, 0. No).
+scalar lambda = 129600 					# Scalar: Lambda parameter for HP-Filter. 
+                                        #         Ravn and Uhlig (2002): Anuual data = 6.25, Quarterly data = 1600, Monthly data = 14,400 or 129,600
+scalar gamma = 3						# Scalar: Gamma parameter of the logistic transition function.
+
+nonlinearmodel = rs_local_projection(endogenous, exogenous, length, constant, nlags, exog_nlags, contemp, 
+  ConfInterv, shocksize, PositionShock, PositionResponse,
+  trigger, logisticfun, lagswitching, dummy, thresh, hpfilter, lambda, gamma)
+eval nonlinearmodel.R1_IRF
+eval nonlinearmodel.R2_IRF
+
+\
+

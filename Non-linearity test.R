@@ -21,4 +21,4 @@ dt=read.csv("Data Base Nonlinearity Test.csv", header = T)
 
 
 resetTest(as.matrix(dt[,16])~as.matrix(dt[,9]+dt[,5]+dt[,6]+dt[,3]+dt[,7]),power=5,type="regressor")
-#we do reject H0 with a 5% confidence level; there is no linearity in the relatioship
+#we do reject H0 with a 5% confidence level; there is no linearity in the relatioship 

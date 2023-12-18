@@ -1,0 +1,127 @@
+
+#Model & Results_v2
+
+#Packages
+include LocalProjection.gfn
+include PPtest.gfn
+
+#Import data
+clear
+set verbose off
+open \
+"C:\Users\Anna Karina\Documents\Asistente Dr. Ventosa\Paper\Code & Data\Model Data Levels.csv" #path
+setobs 12 1960:01 --time-series #define frequency
+
+#Seasonal adjustment already made
+
+#Anual rates
+
+    #Exchange annual rate 
+    series crcambio_a=100*(cambio/cambio(-12)-1)
+    #IGAE expectations anual growth
+    series crexpigae_a=100*(expigae/expigae(-12)-1)
+    #Anual inflation with INPPgen
+    series infpgen_a=100*(INPPgen/INPPgen(-12)-1) 
+    #Anual inflation with INPCagri_N
+    series infagriN_a=100*(INPCagri_N/INPCagri_N(-12)-1)
+    #Anual inflation with INPCsene
+    series infsene_a=100*(INPCsene/INPCsene(-12)-1)    
+    #International commodities price index anual rate FAO
+    series indcomFAO_a=100*(indcom_FAO/indcom_FAO(-12)-1)
+    #International commodities price index anual rate IMF
+    series indcomIMF_a=100*(indcom_IMF/indcom_IMF(-12)-1)   
+    #log IGAE 
+    logs igae
+       
+
+#HP filter to log IGAE serie (cyclical component)
+smpl 2004:03 2020:10 #narrow period
+series hp_l_igae = hpfilt(l_igae, 14400, 0)
+setinfo hp_l_igae \
+  --description="Filtered l_igae: Hodrick-Prescott cycle (lambda = 14400)"
+    #Multiply by 100
+	hp_l_igae_c=100*hp_l_igae
+
+#Narrow Period
+smpl 2005:03 2020:10
+
+#Stationary adjustment  
+GUI_PP(igae, 1, 0, 1)
+GUI_PP(crexpigae_a, 0, 0, 1)
+GUI_PP(infagriN_a, 1, 0, 1)
+GUI_PP(infsene_a, 1, 0, 1)
+GUI_PP(expcrinf, 1, 0, 1)
+GUI_PP(crcambio_a, 0, 0, 1)
+GUI_PP(cetes91, 0, 0, 1)
+GUI_PP(VIX, 1, 0, 1)
+GUI_PP(indcomFAO_a, 0, 0, 1)
+GUI_PP(indcomIMF_a, 0, 0, 1)
+GUI_PP(infpgen_a, 1, 0, 1)
+
+#Model
+#Classification: Niño & Niña vs Neutral
+#Dummy=1 means Niño & Niña, =0 means Neutral
+  
+#Model with the MEI index lagged 12 periods as the trigger variable 
+  
+##Variables
+list endogenous = hp_l_igae_c crexpigae_a infsene_a expcrinf crcambio_a cetes91 # Endogenous variables list
+list exogenous =  VIX indcomFAO_a indcomIMF_a
+
+##Lag selection for Local Projection---------------------------------------------------------------------------------------------------------
+##Parameters needed for lag selection 
+scalar constant = 1 					# Boolean: 1.- Constant; 0.- No constant.
+scalar infocr = 2 						# Integer: 1. AIC, 2. BIC, 3. HQC. Required if lagselection = 1 or exog_lagselection = 1
+scalar lagselection = 1 				# Boolean: Lag selection of endogenous variables. (1.- Yes, 0.- No).
+scalar nlags = 0 						# Integer: Number of lags of endogenous variables. Required if lagselection = 0.
+scalar maxlags = 12						# Integer: Maximum lags of endogenous variables in lag selection. Required if lagselection = 1.
+
+scalar exog_lagselection = 1 			# Boolean: Lag selection of exogenous variables. (1.- Yes, 0.- No).
+scalar exog_nlags = 0 					# Integer: Number of lags of exogenous variables. Required if exog_lagselection = 0. 
+scalar exog_maxlags = 12 				# Integer: Maximum lags of exogenous variables in lag selection. Required if exog_lagselection = 1.
+                                                  #When exog_ maxlags = 0 when exog_lagselection = 1, activate contemp.
+scalar contemp = 0						# Boolean: Contemporaneous effect of exogenous variables (1.- Yes, 0.- No). 
+
+lagselecting = lag_select(endogenous, exogenous, constant, infocr, 
+  lagselection, nlags, maxlags, exog_lagselection, exog_nlags, exog_maxlags, contemp)
+eval lagselecting.OptimalLags
+scalar nlags = lagselecting.OptimalLags[1] 		 # Integer: Lag selection of endogenous variables
+scalar exog_nlags = lagselecting.OptimalLags[2]  # Integer: Lag selection of exogenous variables
+
+
+##Regime-Switching Local Projection-----------------------------------------------------------------------------------------------------------
+##See Auerbach and Gorodnichenko (2012)
+##Parameters needed for the regime switching local projection
+
+scalar length = 12 						# Integer: Periods ahead in the local projection IRF.
+scalar constant = 1 					# Boolean: Include constant? (1.- Yes, 0.- No).
+scalar nlags = 1 		 				# Integer: Number of lags for the endogenous variables. 
+scalar exog_nlags = 1  					# Integer: Number of lags for the exogenous variables. Not required if exogenous is null.
+scalar contemp = 0						# Boolean: Contemporaneous effect of exogenous variables (1.- Yes, 0.- No). 
+scalar ConfInterv = 0.99				# Scalar: Confidence interval in the IRF. Default = 0.95. 
+scalar shocksize = 0 					# Boolean: Shock size (0.- One standard deviation shock, 1.- One unit shock).
+scalar PositionShock = 1				# Integer: Position of the shock variable (number of variable) in the list of endogenous variables. 
+scalar PositionResponse = 3				# Integer: Position of the response variable (number of variable) in the list of endogenous variables. 
+
+list trigger = MEI12_3 						# List: Switching/trigger variable for the high/low regime. Only one variable allowed. 
+scalar logisticfun = 0			        # Boolean: Plug the switching variable into the transition function? (1. Yes, 0. No)
+scalar lagswitching = 0					# Boolean: Lagged switching variable (t − 1) (1. Yes, 0. No).
+scalar dummy = 1 						# Boolean: Switching variable is a dummy (1-0)?. (1. Yes, 0. No).
+scalar thresh = 0.5				 		# Scalar: Threshold (as a percentile) of the switching variable. For additional details, read the documentation. 
+# o	If the user previously created an indicator variable and dummy = 1, this input can be disregarded. 				
+# o	If dummy = 1 and the trigger variable is not a dummy, thresh creates a dummy variable that takes value of 1 
+# if the trigger variable exceeds the indicated percentile value and 0 otherwise. Valid values between 0 and 1. 
+
+scalar hpfilter = 0 					# Boolean: Switching/trigger variable decomposed with the HP filter. (1. Yes, 0. No).
+scalar lambda = 129600 					# Scalar: Lambda parameter for HP-Filter. 
+                                        #         Ravn and Uhlig (2002): Anuual data = 6.25, Quarterly data = 1600, Monthly data = 14,400 or 129,600
+scalar gamma = 3						# Scalar: Gamma parameter of the logistic transition function.
+
+nonlinearmodel = rs_local_projection(endogenous, exogenous, length, constant, nlags, exog_nlags, contemp, 
+  ConfInterv, shocksize, PositionShock, PositionResponse,
+  trigger, logisticfun, lagswitching, dummy, thresh, hpfilter, lambda, gamma)
+eval nonlinearmodel.R1_IRF
+eval nonlinearmodel.R2_IRF
+
+\
+
